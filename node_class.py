@@ -1,14 +1,15 @@
 import pymel.core as pm
 
-ATTRIBUTE_DICT = {"name":"logan", "race":"human", "class":"TA", "foo":1, "qux":True, "baz":2.0}
+ATTRIBUTE_DICT = {"name":"logan", "race":"human", "occupation":"TA", "foo":1, "qux":True, "baz":2.0, "instruments":["bass","guitar","harmonica"]}
 
 TYPE_DICT={
-    #todo: enums from list or dict?
+    #todo: message attrs?
     float: 'double',
     int: 'long',
     bool: 'bool',
     str: 'string',
-    unicode: 'string'
+    unicode: 'string',
+    list: 'enum',
 }
 
 
@@ -17,8 +18,12 @@ def test_node():
     for attribute,value in ATTRIBUTE_DICT.iteritems():
         type=value.__class__
         maya_type=TYPE_DICT[type]
-        pm.addAttr(node,longName=attribute,type=maya_type)
-        node.setAttr(attribute,value)
+        if maya_type=="enum":
+            print "{}({}) is enum".format(attribute,value)
+            pm.addAttr(node, longName=attribute, type=maya_type, enumName=value)
+        else:
+            pm.addAttr(node,longName=attribute,type=maya_type)
+            node.setAttr(attribute,value)
     return node
 
 
@@ -27,6 +32,7 @@ class MayaNodeClass(object):
     a class to get and set custom maya node attributes
     when no node exists, get and set instance attributes
     """
+
     PYMEL_NODE_CLASS = pm.nodetypes.Network
 
     def __init__(self,**kwargs):
@@ -50,30 +56,47 @@ class MayaNodeClass(object):
 
 
     def _build_attributes(self):
-
+        """
+        this adds all the attributes in self._attribute list, no values are populated.
+        :return:
+        """
         if self._attribute_list:
             for attribute_name in self._attribute_list:
-
-                def _set(attribute_name, value):
-
-                    if self._node:
-                        self._node.setAttr(attribute_name, value)
-                    else:
-                        setattr(self, attribute_name, value)
-
-                def _get(attribute_name):
-
-                    if self._node:
-                        return self._node.attr(attribute_name).get()
-                    else:
-                        getattr(self, attribute_name)
-
-                #dunder methods make me nervous
-                #is there another way to add the property <attribute_name> ?
-                self.__dict__[attribute_name]= property(_set,_get)
-                setattr(self,attribute_name,_get(attribute_name))
+                self._add_attribute(attribute_name)
         else:
             raise ValueError("{}._attribute_list is empty. unable to build attributes.".format(self))
+
+    def _add_attribute(self,attribute_name):
+        """
+        an attribute factory. add <attribute_name> to self using @property decorators
+        build setter that sets the maya node attr if node exists, always set private attr
+        and getter that return the maya node attr value  if node exists
+
+        and
+        :param attribute_name:
+        :return:
+        """
+        # private is needed to eliminate recursion error when self._node is not present
+        private_attribute = "_" + attribute_name
+
+        def _set(attribute_name, value):
+
+            if self._node:
+                self._node.setAttr(attribute_name, value)
+                setattr(self, private_attribute, value)
+            else:
+                setattr(self, private_attribute, value)
+
+        def _get(attribute_name):
+
+            if self._node:
+                return self._node.attr(attribute_name).get()
+            else:
+                getattr(self, private_attribute)
+
+        # is there another way to add the property <attribute_name> ?
+        self.__dict__[attribute_name] = property(_set, _get)
+        setattr(self, attribute_name, _get(attribute_name))
 
     def _create_node(self):
         """
@@ -81,6 +104,7 @@ class MayaNodeClass(object):
         default maya node type is PYMEL_NODE_CLASS
         :return:
         """
+        pass
 
     def info(self):
         if self._attribute_list:
@@ -88,8 +112,11 @@ class MayaNodeClass(object):
                 print "{}.{}:{}".format(self, attr, getattr(self,attr))
 
 if __name__ == '__main__':
-    if not pm.uniqueObjExists("TestNode"):
-        test_node()
+    try:
+        pm.delete("TestNode")
+    except:
+        pass
+    node=test_node()
     nc=MayaNodeClass(node="TestNode")
     nc.info()
 
